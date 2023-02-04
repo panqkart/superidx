@@ -1,12 +1,11 @@
 # superiDX
-A custom schematic saving/loading format that focuses on file size and speed
 
-# To do
-Node meta
+A custom schematic saving/loading format that focuses on file size and speed.\
+**Please note that this is a modified version of the [original mod](https://github.com/TSafa-23/superidx).**
 
-# Benchmarks
+## Benchmarks (outdated)
 
-```
+```plaintext
 100x100x100 Underground:
 
 1st: MTS:
