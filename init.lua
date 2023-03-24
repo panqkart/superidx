@@ -55,8 +55,8 @@ function superi.save(minpos, maxpos, name)
 	local voxelarea = VoxelArea:new{MinEdge = emin, MaxEdge = emax}
 
 	-- Get node meta of all the nodes.
-	local meta_table = {} -- luacheck: ignore
-	local meta_positions = minetest.find_nodes_with_meta(emin, emax) -- luacheck: ignore
+	local meta_table = {}
+	local meta_positions = minetest.find_nodes_with_meta(emin, emax)
 
 	local vm_nodes = voxelmanip:get_data()
 	local param1 = voxelmanip:get_light_data()
@@ -81,35 +81,42 @@ function superi.save(minpos, maxpos, name)
 			table.insert(nodes, #nodenames)
 		end
 
-		-- Serialize metadata (WIP and non-working).
-
-		--[[
-		local pos = voxelarea:position(loc)
+		-- Serialize metadata
+		--
+		-- START: Code taken from the `modgen` mod by BuckarooBanzay.
+		-- Thanks! https://github.com/BuckarooBanzay/modgen/blob/master/serialize.lua#L118
 		for _, meta_pos in pairs(meta_positions) do
-			if vector.equals(pos, meta_pos) then
-				local meta = minetest.get_meta(meta_pos):to_table()
-				meta_table[minetest.pos_to_string(pos)] = meta
+			local relative_pos = vector.subtract(meta_pos, minpos)
+			local meta = minetest.get_meta(meta_pos):to_table()
 
-				-- Convert metadata item stacks to item strings
-				for inv_name, list in pairs(meta.inventory) do
-					for i, stack in ipairs(list) do
-						meta.inventory[inv_name][i] = stack:to_string()
+			-- Convert metadata item stacks to item strings
+			for _, invlist in pairs(meta.inventory) do
+				for index = 1, #invlist do
+					local itemstack = invlist[index]
+					if itemstack.to_string then
+						invlist[index] = itemstack:to_string()
 					end
 				end
 			end
-		end--]]
+
+			if next(meta) and (next(meta.fields) or next(meta.inventory)) then
+				meta_table = meta_table or {}
+				meta_table[minetest.pos_to_string(relative_pos)] = meta
+			end
+			-- END: Code taken from the `modgen` mod by BuckarooBanzay.
+		end
 	end
 
-	superi.saved[name] = { size = size, nodenames = nodenames, nodes = superi.rle(nodes), param1 = param1_data, param2 = param2_data }
+	superi.saved[name] = { size = size, nodenames = nodenames, meta = meta_table, nodes = superi.rle(nodes), param1 = param1_data, param2 = param2_data }
 	storage:set_string(name, minetest.serialize(superi.saved[name])) -- To be able to load the file properly.
 
 	minetest.mkdir(minetest.get_worldpath() .. "/schems")
 	local file = io.open(minetest.get_worldpath() .."/schems/" ..name ..".sdx", "w+")
 	local serial_data = minetest.serialize(superi.saved[name])
 	if superi.use_zlib_compression then
-		file:write(minetest.compress(serial_data:gsub(" ", ""), "deflate", 9))
+		file:write(minetest.compress(serial_data, "deflate", 9))
 	else
-		file:write(serial_data:gsub(" ", ""))
+		file:write(serial_data)
 	end
 	file:close()
 end
@@ -156,16 +163,14 @@ function superi.load(minpos, data)
 	voxelmanip:set_data(vm_nodes)
 	voxelmanip:set_light_data(param1)
 	voxelmanip:set_param2_data(param2)
-	voxelmanip:write_to_map(true)
+	voxelmanip:write_to_map(false)
 
-	-- Deserialize node metadata (WIP and non-working).
+	-- Deserialize and set node metadata from `data.meta`.
 	minetest.after(0.1, function()
 		if data.meta then
-			for pos_str, meta in pairs(data.meta) do
-				local pos = minetest.string_to_pos(pos_str)
-				local meta_ref = minetest.get_meta(pos)
-
-				meta_ref:from_table(meta)
+			for pos, value in pairs(data.meta) do
+				local absolute_pos = vector.add(minpos, minetest.string_to_pos(pos))
+				minetest.get_meta(absolute_pos):from_table(value)
 			end
 		end
 	end)
