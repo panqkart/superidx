@@ -41,7 +41,7 @@ function superi.rle(nodes)
 	return nodes_rle
 end
 
-function superi.save(minpos, maxpos, name)
+function superi.save(minpos, maxpos, name, track_name)
 	local nodenames = {}
 	local nodes = {}
 	local tempnode
@@ -107,15 +107,26 @@ function superi.save(minpos, maxpos, name)
 		end
 	end
 
-	superi.saved[name] = { size = size, nodenames = nodenames, meta = meta_table, nodes = superi.rle(nodes), param1 = param1_data, param2 = param2_data }
+	superi.saved[name] = {size = size, nodenames = nodenames, meta = meta_table, nodes = superi.rle(nodes), param1 = param1_data, param2 = param2_data}
 	storage:set_string(name, minetest.serialize(superi.saved[name])) -- To be able to load the file properly.
 
 	minetest.mkdir(minetest.get_worldpath() .. "/schems")
-	local file = io.open(minetest.get_worldpath() .."/schems/" ..name ..".sdx", "w+")
+	local file = io.open(minetest.get_worldpath() .. "/schems/" .. name ..".lua", "w+")
 	local serial_data = minetest.serialize(superi.saved[name])
 	if superi.use_zlib_compression then
 		file:write(minetest.compress(serial_data, "deflate", 9))
 	else
+		local return_pos = serial_data:find("return")
+		serial_data = serial_data:sub(1, return_pos - 1) .. "\n" .. serial_data:sub(return_pos)
+
+		serial_data = serial_data:gsub("return", "tracks.all_tracks[\"" .. track_name .."\"].data =")
+
+		-- Remove all digits at the very end of the file.
+		while serial_data:sub(-1):match("%d") do
+			serial_data = serial_data:sub(1, -2)
+		end
+
+		serial_data = serial_data .. "\n"
 		file:write(serial_data)
 	end
 	file:close()
@@ -178,20 +189,29 @@ end
 
 -- Commands only for testing, initial release
 minetest.register_chatcommand("save", { -- Function needs to handle small amount of maths to determine min and max pos, not permanent
-	privs = {server = true},
+	privs = { pk_map_creator = true },
+	params = "<filename> <track_name>", -- PanqKart edition.
 	func = function(name, param)
 		if not minetest.get_player_by_name(name) then return end
 		if not superi.temp[name]["1"] or not superi.temp[name]["2"] then return end
-		-- you don't know how much I hate doing this but thank god it's temporary
+
 		local newpos1 = {x = superi.lesser(superi.temp[name]["1"].x, superi.temp[name]["2"].x), y = superi.lesser(superi.temp[name]["1"].y, superi.temp[name]["2"].y), z = superi.lesser(superi.temp[name]["1"].z, superi.temp[name]["2"].z)}
 		local newpos2 = {x = superi.greater(superi.temp[name]["1"].x, superi.temp[name]["2"].x), y = superi.greater(superi.temp[name]["1"].y, superi.temp[name]["2"].y), z = superi.greater(superi.temp[name]["1"].z, superi.temp[name]["2"].z)}
-		superi.save(newpos1, newpos2, param)
-		minetest.chat_send_player(name, "Saved as " .. param ..".sdx!")
+
+		-- Multiple parameter support.
+		local filename = param:split(" ")[1]
+		local track_name = param:split(" ")[2]
+
+		superi.save(newpos1, newpos2, filename, track_name)
+
+		minetest.chat_send_player(name, "Saved as " .. filename .. ".lua!")
+		minetest.chat_send_player(name, "\nIf you're in the map maker mode in PanqKart, check out the map maker guide for more information on how to use this file.")
+		minetest.chat_send_player(name, "Link to the guide: <GitHub link>")
 	end
 })
 
 minetest.register_chatcommand("load", {
-	privs = {server = true},
+	privs = { pk_map_creator = true },
 	func = function(name, param)
 		if not minetest.get_player_by_name(name) then return end
 		if not superi.temp[name]["1"] then return end
@@ -201,12 +221,12 @@ minetest.register_chatcommand("load", {
 			return
 		end
 		superi.load(superi.temp[name]["1"], minetest.deserialize(storage:get_string(param)))
-		minetest.chat_send_player(name, "Loaded " .. param ..".sdx!")
+		minetest.chat_send_player(name, "Loaded " .. param ..".lua!")
 	end
 })
 
 minetest.register_chatcommand("1", {
-	privs = {server = true},
+	privs = { pk_map_creator = true },
 	func = function(name)
 		if not minetest.get_player_by_name(name) then return end
 
@@ -217,7 +237,7 @@ minetest.register_chatcommand("1", {
 })
 
 minetest.register_chatcommand("2", {
-	privs = {server = true},
+	privs = { pk_map_creator = true },
 	func = function(name)
 		if not minetest.get_player_by_name(name) then return end
 		local tpos = minetest.get_player_by_name(name):get_pos()
